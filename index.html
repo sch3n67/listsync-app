@@ -196,14 +196,14 @@
   <!-- Upload card -->
   <div class="card">
     <h2>New Listing</h2>
-    <div id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="dropZoneDragOver(event)" ondragleave="dropZoneDragLeave(event)" ondrop="dropZoneFiles(event)">
+    <label id="drop-zone" for="file-input" ondragover="dropZoneDragOver(event)" ondragleave="dropZoneDragLeave(event)" ondrop="dropZoneFiles(event)">
       <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
       </svg>
       <p><strong>Drop photos here</strong> or click to browse</p>
       <p style="margin-top:6px;font-size:12px">Add all photos of the item — front, back, tags, any flaws</p>
-    </div>
-    <input type="file" id="file-input" multiple accept="image/*" onchange="handleFiles(this.files)">
+    </label>
+    <input type="file" id="file-input" multiple accept="image/*,.heic,.heif" onchange="handleFiles(this.files)">
     <div id="photo-grid"></div>
     <p class="grid-hint" id="grid-hint" style="display:none">Drag photos to reorder &bull; Click &#8634; / &#8635; to rotate</p>
     <button id="analyze-btn" onclick="analyzePhotos()">Analyze with AI &rarr;</button>
@@ -412,6 +412,7 @@ function handleFiles(files) {
     photoItems.push({ file, rotation: 0, previewUrl: URL.createObjectURL(file), serverFilename: null });
   }
   renderPhotoGrid();
+  document.getElementById('file-input').value = '';
 }
 
 function renderPhotoGrid() {
