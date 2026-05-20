@@ -67,6 +67,24 @@
   .form-group textarea { resize: vertical; min-height: 90px; }
   .form-group select option { background: #1a1a1a; }
 
+  /* Searchable combobox */
+  .combobox-wrap { position: relative; }
+  .combobox-dropdown {
+    position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 30;
+    background: #1a1a1a; border: 1px solid #3b82f6; border-radius: 10px;
+    max-height: 220px; overflow-y: auto; display: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+  }
+  .combobox-dropdown.open { display: block; }
+  .combobox-option {
+    padding: 9px 12px; font-size: 14px; cursor: pointer; color: #e0e0e0;
+    border-radius: 7px; margin: 2px 3px; transition: background 0.1s;
+  }
+  .combobox-option:hover, .combobox-option.focused { background: #2563eb; color: #fff; }
+  .combobox-option.no-match { color: #555; cursor: default; font-style: italic; }
+  .combobox-option strong { color: #93c5fd; font-weight: 700; }
+  .combobox-option.focused strong { color: #fff; }
+
   .ai-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(59,130,246,0.15); color: #3b82f6; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; margin-bottom: 16px; }
 
   #post-btn { width: 100%; margin-top: 24px; padding: 16px; background: #22c55e; border: none; border-radius: 10px; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
@@ -138,10 +156,8 @@
     </div>
     <input type="file" id="file-input" multiple accept="image/*" onchange="handleFiles(this.files)">
     <div id="photo-grid"></div>
-    <p class="grid-hint" id="grid-hint" style="display:none">Drag photos to reorder &bull; Click ↻ to rotate</p>
-    <button id="analyze-btn" onclick="analyzePhotos()">
-      Analyze with AI &rarr;
-    </button>
+    <p class="grid-hint" id="grid-hint" style="display:none">Drag photos to reorder &bull; Click &#8634; / &#8635; to rotate</p>
+    <button id="analyze-btn" onclick="analyzePhotos()">Analyze with AI &rarr;</button>
   </div>
 
   <!-- AI-filled form -->
@@ -164,11 +180,14 @@
         <input type="number" id="f-price" step="0.01" min="0">
       </div>
       <div class="form-group">
-        <label>Size</label>
-        <input type="text" id="f-size">
+        <label id="size-label">Size</label>
+        <input type="text" id="f-size-text" placeholder="e.g. S, M, L, XL">
+        <select id="f-size-shoe" style="display:none">
+          <option value="">Select size...</option>
+        </select>
       </div>
       <div class="form-group">
-        <label>Size Type</label>
+        <label id="sizetype-label">Size Type</label>
         <select id="f-sizetype">
           <option>Regular</option>
           <option>Big &amp; Tall</option>
@@ -182,31 +201,15 @@
         <input type="text" id="f-color">
       </div>
       <div class="form-group">
-        <label>Material</label>
+        <label id="material-label">Material</label>
         <input type="text" id="f-material" placeholder="e.g. Cotton, Polyester, Denim">
       </div>
       <div class="form-group">
         <label>Category</label>
-        <select id="f-category">
-          <option>Men's T-Shirt</option>
-          <option>Men's Shirt</option>
-          <option>Men's Jeans</option>
-          <option>Men's Pants</option>
-          <option>Men's Shorts</option>
-          <option>Men's Jacket</option>
-          <option>Men's Sweater</option>
-          <option>Men's Hoodie</option>
-          <option>Women's Top</option>
-          <option>Women's T-Shirt</option>
-          <option>Women's Jeans</option>
-          <option>Women's Pants</option>
-          <option>Women's Shorts</option>
-          <option>Women's Dress</option>
-          <option>Women's Skirt</option>
-          <option>Women's Jacket</option>
-          <option>Women's Sweater</option>
-          <option>Women's Hoodie</option>
-        </select>
+        <div class="combobox-wrap">
+          <input type="text" id="f-category" class="combobox-input" placeholder="Type to search categories..." autocomplete="off">
+          <div class="combobox-dropdown" id="cat-dropdown"></div>
+        </div>
       </div>
       <div class="form-group">
         <label>Condition</label>
@@ -241,6 +244,53 @@
 <script>
 const API = 'https://listsync-server.onrender.com';
 
+// All supported categories
+const CATEGORIES = [
+  // Men's Tops
+  "Men's T-Shirt","Men's Polo Shirt","Men's Casual Shirt","Men's Dress Shirt","Men's Tank Top","Men's Henley",
+  // Men's Bottoms
+  "Men's Jeans","Men's Chinos","Men's Pants","Men's Shorts","Men's Sweatpants","Men's Joggers",
+  // Men's Activewear
+  "Men's Athletic Shorts","Men's Athletic Pants","Men's Athletic Top",
+  // Men's Outerwear
+  "Men's Jacket","Men's Coat","Men's Hoodie","Men's Sweater","Men's Cardigan","Men's Vest","Men's Blazer","Men's Suit Jacket",
+  // Men's Shoes
+  "Men's Sneakers","Men's Running Shoes","Men's Dress Shoes","Men's Boots","Men's Sandals","Men's Loafers","Men's Slip-Ons",
+  // Women's Tops
+  "Women's T-Shirt","Women's Blouse","Women's Top","Women's Tank Top","Women's Crop Top","Women's Camisole","Women's Polo",
+  // Women's Bottoms
+  "Women's Jeans","Women's Pants","Women's Leggings","Women's Shorts","Women's Skirt","Women's Mini Skirt","Women's Maxi Skirt","Women's Sweatpants","Women's Joggers",
+  // Women's Dresses
+  "Women's Casual Dress","Women's Formal Dress","Women's Maxi Dress","Women's Mini Dress","Women's Midi Dress","Women's Sundress",
+  // Women's Activewear
+  "Women's Athletic Top","Women's Athletic Shorts","Women's Athletic Leggings","Women's Sports Bra",
+  // Women's Outerwear
+  "Women's Jacket","Women's Coat","Women's Hoodie","Women's Sweater","Women's Cardigan","Women's Vest","Women's Blazer",
+  // Women's Shoes
+  "Women's Sneakers","Women's Running Shoes","Women's Heels","Women's Pumps","Women's Boots","Women's Ankle Boots","Women's Sandals","Women's Flats","Women's Wedges","Women's Loafers","Women's Slip-Ons","Women's Mules",
+  // Boys'
+  "Boys' T-Shirt","Boys' Pants","Boys' Shorts","Boys' Jacket","Boys' Hoodie","Boys' Shoes",
+  // Girls'
+  "Girls' T-Shirt","Girls' Dress","Girls' Pants","Girls' Skirt","Girls' Jacket","Girls' Hoodie","Girls' Shoes",
+  // Accessories
+  "Men's Belt","Women's Belt",
+  "Men's Hat","Women's Hat",
+  "Men's Sunglasses","Women's Sunglasses",
+  "Watch","Men's Tie","Men's Wallet",
+  "Women's Handbag","Women's Purse","Women's Clutch","Backpack",
+  "Men's Scarf","Women's Scarf",
+  "Men's Gloves","Women's Gloves",
+  "Jewelry - Necklace","Jewelry - Bracelet","Jewelry - Earrings","Jewelry - Ring"
+];
+
+const MEN_SHOE_SIZES   = ['6','6.5','7','7.5','8','8.5','9','9.5','10','10.5','11','11.5','12','12.5','13','14','15'];
+const WOMEN_SHOE_SIZES = ['5','5.5','6','6.5','7','7.5','8','8.5','9','9.5','10','10.5','11','12'];
+const KIDS_SHOE_SIZES  = ['1','1.5','2','2.5','3','3.5','4','4.5','5','5.5','6','6.5','7','7.5','8','8.5','9','9.5','10','10.5','11','11.5','12','12.5','13','13.5'];
+
+function isShoe(cat) {
+  return /sneakers?|running shoes?|dress shoes?|ankle boots?|boots?|sandals?|loafers?|slip.ons?|heels?|pumps?|flats?|wedges?|mules?/i.test(cat || '');
+}
+
 // photoItems: [{file, rotation, previewUrl, serverFilename}]
 let photoItems = [];
 let dragSrcIndex = -1;
@@ -258,10 +308,7 @@ async function checkStatus() {
   try {
     const res = await fetch(`${API}/api/status`);
     const data = await res.json();
-    if (data.connected) {
-      setConnected();
-      localStorage.setItem('ebay_connected', 'true');
-    }
+    if (data.connected) { setConnected(); localStorage.setItem('ebay_connected', 'true'); }
     loadListings();
   } catch {}
 }
@@ -283,8 +330,7 @@ async function submitToken() {
   const token = document.getElementById('token-input').value.trim();
   if (!token) return;
   const res = await fetch(`${API}/api/set-token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token })
   });
   const data = await res.json();
@@ -299,12 +345,9 @@ async function submitToken() {
   }
 }
 
-// ---- Drop zone (for adding new photos) ----
+// ---- Drop zone ----
 
-function dropZoneDragOver(e) {
-  e.preventDefault();
-  e.currentTarget.classList.add('dragover');
-}
+function dropZoneDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
 function dropZoneDragLeave(e) { e.currentTarget.classList.remove('dragover'); }
 function dropZoneFiles(e) {
   e.preventDefault();
@@ -325,30 +368,23 @@ function handleFiles(files) {
 function renderPhotoGrid() {
   const grid = document.getElementById('photo-grid');
   grid.innerHTML = '';
-
   photoItems.forEach((item, i) => {
     const div = document.createElement('div');
     div.className = 'photo-thumb';
     div.draggable = true;
     div.dataset.index = i;
 
-    // Image (CSS rotation for preview)
     const img = document.createElement('img');
     img.src = item.previewUrl;
     img.style.transform = `rotate(${item.rotation}deg)`;
-    // For 90/270 deg, scale to fill — avoids the image shrinking in the square
-    if (item.rotation === 90 || item.rotation === 270) {
-      img.style.transform += ' scale(1.35)';
-    }
+    if (item.rotation === 90 || item.rotation === 270) img.style.transform += ' scale(1.35)';
     div.appendChild(img);
 
-    // Order badge
     const badge = document.createElement('div');
     badge.className = 'photo-order';
     badge.textContent = i + 1;
     div.appendChild(badge);
 
-    // Controls (rotate CW + CCW)
     const controls = document.createElement('div');
     controls.className = 'photo-controls';
     controls.innerHTML = `
@@ -357,7 +393,6 @@ function renderPhotoGrid() {
     `;
     div.appendChild(controls);
 
-    // Drag events
     div.addEventListener('dragstart', (e) => {
       dragSrcIndex = i;
       setTimeout(() => div.classList.add('dragging'), 0);
@@ -386,14 +421,171 @@ function renderPhotoGrid() {
     grid.appendChild(div);
   });
 
-  const hasPhotos = photoItems.length > 0;
-  document.getElementById('analyze-btn').style.display = hasPhotos ? 'block' : 'none';
+  const has = photoItems.length > 0;
+  document.getElementById('analyze-btn').style.display = has ? 'block' : 'none';
   document.getElementById('grid-hint').style.display = photoItems.length > 1 ? 'block' : 'none';
 }
 
 function rotatePhoto(index, degrees) {
   photoItems[index].rotation = ((photoItems[index].rotation + degrees) % 360 + 360) % 360;
   renderPhotoGrid();
+}
+
+// ---- Category combobox ----
+
+function initCategoryCombobox() {
+  const input = document.getElementById('f-category');
+  const dropdown = document.getElementById('cat-dropdown');
+  let focusedIdx = -1;
+
+  function renderOptions(filter) {
+    const q = (filter || '').toLowerCase().trim();
+    const matches = q
+      ? CATEGORIES.filter(c => c.toLowerCase().includes(q))
+      : CATEGORIES;
+    focusedIdx = -1;
+    if (matches.length === 0) {
+      dropdown.innerHTML = '<div class="combobox-option no-match">No matches found</div>';
+      return;
+    }
+    dropdown.innerHTML = matches.map((c, idx) => {
+      let label = c;
+      if (q) {
+        const lo = c.toLowerCase();
+        const pos = lo.indexOf(q);
+        if (pos >= 0) {
+          label = c.slice(0, pos) + '<strong>' + c.slice(pos, pos + q.length) + '</strong>' + c.slice(pos + q.length);
+        }
+      }
+      return `<div class="combobox-option" data-value="${c}" data-idx="${idx}">${label}</div>`;
+    }).join('');
+    dropdown.querySelectorAll('.combobox-option').forEach(opt => {
+      opt.addEventListener('mousedown', e => {
+        e.preventDefault();
+        pickCategory(opt.dataset.value);
+      });
+    });
+  }
+
+  function pickCategory(val) {
+    input.value = val;
+    dropdown.classList.remove('open');
+    updateSizeFieldForCategory(val);
+  }
+
+  input.addEventListener('focus', () => {
+    renderOptions(input.value);
+    dropdown.classList.add('open');
+  });
+  input.addEventListener('input', () => {
+    renderOptions(input.value);
+    dropdown.classList.add('open');
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => dropdown.classList.remove('open'), 160);
+  });
+  input.addEventListener('keydown', e => {
+    const opts = [...dropdown.querySelectorAll('.combobox-option:not(.no-match)')];
+    if (!opts.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      focusedIdx = Math.min(focusedIdx + 1, opts.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      focusedIdx = Math.max(focusedIdx - 1, 0);
+    } else if (e.key === 'Enter' && focusedIdx >= 0) {
+      e.preventDefault();
+      pickCategory(opts[focusedIdx].dataset.value);
+      return;
+    } else if (e.key === 'Escape') {
+      dropdown.classList.remove('open');
+      return;
+    }
+    opts.forEach((o, i) => o.classList.toggle('focused', i === focusedIdx));
+    opts[focusedIdx]?.scrollIntoView({ block: 'nearest' });
+  });
+}
+
+// ---- Size field switching ----
+
+function updateSizeFieldForCategory(cat) {
+  const textEl    = document.getElementById('f-size-text');
+  const shoeEl    = document.getElementById('f-size-shoe');
+  const stEl      = document.getElementById('f-sizetype');
+  const stLabel   = document.getElementById('sizetype-label');
+  const matLabel  = document.getElementById('material-label');
+
+  if (isShoe(cat)) {
+    textEl.style.display = 'none';
+    shoeEl.style.display = '';
+
+    const isWomens = /women/i.test(cat);
+    const isKids   = /boys|girls/i.test(cat);
+    const sizes    = isKids ? KIDS_SHOE_SIZES : (isWomens ? WOMEN_SHOE_SIZES : MEN_SHOE_SIZES);
+    shoeEl.innerHTML = '<option value="">Select size...</option>' +
+      sizes.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    stLabel.textContent = 'Width';
+    stEl.innerHTML = `
+      <option>Medium (Regular)</option>
+      <option>Narrow</option>
+      <option>Wide</option>
+      <option>Extra Wide</option>`;
+
+    matLabel.textContent = 'Upper Material';
+    textEl.placeholder = 'e.g. 10, 10.5, 11';
+  } else {
+    textEl.style.display = '';
+    shoeEl.style.display = 'none';
+
+    stLabel.textContent = 'Size Type';
+    stEl.innerHTML = `
+      <option>Regular</option>
+      <option>Big &amp; Tall</option>
+      <option>Petite</option>
+      <option>Plus</option>
+      <option>Maternity</option>`;
+
+    matLabel.textContent = 'Material';
+
+    if (/jeans|pants|chinos/i.test(cat)) {
+      textEl.placeholder = 'e.g. 32x30, 34x32';
+    } else {
+      textEl.placeholder = 'e.g. S, M, L, XL';
+    }
+  }
+}
+
+function getSize() {
+  const textEl = document.getElementById('f-size-text');
+  const shoeEl = document.getElementById('f-size-shoe');
+  return shoeEl.style.display !== 'none' ? shoeEl.value : textEl.value;
+}
+
+function setSize(val) {
+  const textEl = document.getElementById('f-size-text');
+  const shoeEl = document.getElementById('f-size-shoe');
+  if (shoeEl.style.display !== 'none') {
+    // Try to match exact shoe size option
+    const v = String(val || '');
+    for (const opt of shoeEl.options) {
+      if (opt.value === v) { shoeEl.value = v; return; }
+    }
+    shoeEl.value = '';
+  } else {
+    textEl.value = val || '';
+  }
+}
+
+function setCategoryFromAI(aiCat) {
+  const lower = (aiCat || '').toLowerCase();
+  const match =
+    CATEGORIES.find(c => c.toLowerCase() === lower) ||
+    CATEGORIES.find(c => c.toLowerCase().includes(lower)) ||
+    CATEGORIES.find(c => lower.includes(c.toLowerCase()));
+  const val = match || aiCat || '';
+  document.getElementById('f-category').value = val;
+  updateSizeFieldForCategory(val);
 }
 
 // ---- AI Analysis ----
@@ -414,7 +606,7 @@ async function analyzePhotos() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
 
-    // Map server filenames back to each photoItem (in order uploaded)
+    // Map server filenames to each photoItem in order
     (data.uploadedFiles || []).forEach((fname, i) => {
       if (photoItems[i]) photoItems[i].serverFilename = fname;
     });
@@ -430,23 +622,21 @@ async function analyzePhotos() {
       });
       if (anyRotated) {
         renderPhotoGrid();
-        showToast('AI detected and corrected photo rotation — check the photos above');
+        showToast('AI corrected photo rotation — check photos above');
       }
     }
 
-    // Fill form
-    document.getElementById('f-title').value = data.title || '';
-    document.getElementById('f-brand').value = data.brand || '';
-    document.getElementById('f-price').value = data.price || '';
-    document.getElementById('f-size').value = data.size || '';
-    document.getElementById('f-color').value = data.color || '';
-    document.getElementById('f-material').value = data.material || 'Cotton';
+    // Fill form — category first so size field type is correct before setSize
+    setCategoryFromAI(data.category);
+    setSize(data.size);
+
+    document.getElementById('f-title').value       = data.title || '';
+    document.getElementById('f-brand').value       = data.brand || '';
+    document.getElementById('f-price').value       = data.price || '';
+    document.getElementById('f-color').value       = data.color || '';
+    document.getElementById('f-material').value    = data.material || '';
     document.getElementById('f-description').value = data.description || '';
 
-    const catSel = document.getElementById('f-category');
-    for (const opt of catSel.options) {
-      if (opt.value.toLowerCase() === (data.category || '').toLowerCase()) { catSel.value = opt.value; break; }
-    }
     const condSel = document.getElementById('f-condition');
     for (const opt of condSel.options) {
       if (opt.value === data.condition) { condSel.value = opt.value; break; }
@@ -474,20 +664,19 @@ async function postToEbay() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Posting to eBay...';
 
-  // Use current photoItems order and rotations
   const uploadedFiles = photoItems.map(p => p.serverFilename).filter(Boolean);
-  const rotations = photoItems.filter(p => p.serverFilename).map(p => p.rotation);
+  const rotations     = photoItems.filter(p => p.serverFilename).map(p => p.rotation);
 
   const payload = {
-    title: document.getElementById('f-title').value,
-    brand: document.getElementById('f-brand').value,
-    price: parseFloat(document.getElementById('f-price').value),
-    size: document.getElementById('f-size').value,
-    sizeType: document.getElementById('f-sizetype').value,
-    color: document.getElementById('f-color').value,
-    material: document.getElementById('f-material').value,
-    category: document.getElementById('f-category').value,
-    condition: document.getElementById('f-condition').value,
+    title:       document.getElementById('f-title').value,
+    brand:       document.getElementById('f-brand').value,
+    price:       parseFloat(document.getElementById('f-price').value),
+    size:        getSize(),
+    sizeType:    document.getElementById('f-sizetype').value,
+    color:       document.getElementById('f-color').value,
+    material:    document.getElementById('f-material').value,
+    category:    document.getElementById('f-category').value,
+    condition:   document.getElementById('f-condition').value,
     description: document.getElementById('f-description').value,
     uploadedFiles,
     rotations
@@ -587,6 +776,9 @@ function showLoading(text) {
 function hideLoading() {
   document.getElementById('loading-overlay').classList.remove('show');
 }
+
+// Init
+initCategoryCombobox();
 </script>
 </body>
 </html>
