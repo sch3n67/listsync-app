@@ -215,9 +215,11 @@ if (location.search.includes('connected=true')) {
 
 checkStatus();
 
-function connectEbay() {
+async function connectEbay() {
   if (document.getElementById('connect-btn').classList.contains('connected')) return;
-  window.location.href = `${API}/auth/ebay`;
+  const res = await fetch(`${API}/api/auth-url`);
+  const data = await res.json();
+  window.location.href = data.url;
 }
 
 function dragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
