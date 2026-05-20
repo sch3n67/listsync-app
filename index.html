@@ -33,9 +33,19 @@
   #drop-zone p strong { color: #fff; }
   #file-input { display: none; }
 
-  #photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 16px; }
-  .photo-thumb { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #111; }
-  .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  /* Photo grid */
+  #photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-top: 16px; }
+  .photo-thumb { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #111; position: relative; cursor: grab; user-select: none; transition: opacity 0.2s, box-shadow 0.15s; }
+  .photo-thumb:active { cursor: grabbing; }
+  .photo-thumb.dragging { opacity: 0.3; }
+  .photo-thumb.drag-over { box-shadow: 0 0 0 2px #3b82f6; }
+  .photo-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.25s; }
+  .photo-order { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.7); color: #fff; font-size: 10px; font-weight: 800; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
+  .photo-controls { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 5px; padding: 6px 4px 5px; background: linear-gradient(transparent, rgba(0,0,0,0.8)); opacity: 0; transition: opacity 0.18s; z-index: 2; }
+  .photo-thumb:hover .photo-controls { opacity: 1; }
+  .rotate-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.2); color: #fff; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; flex-shrink: 0; }
+  .rotate-btn:hover { background: rgba(255,255,255,0.35); }
+  .grid-hint { font-size: 11px; color: #555; margin-top: 8px; text-align: center; }
 
   #analyze-btn { width: 100%; margin-top: 20px; padding: 14px; background: #3b82f6; border: none; border-radius: 10px; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.2s; display: none; }
   #analyze-btn:hover { background: #2563eb; }
@@ -108,7 +118,7 @@
   </div>
 </header>
 <div id="token-box" style="display:none;background:#1a1a1a;border-bottom:1px solid #2a2a2a;padding:16px 24px;">
-  <p style="font-size:13px;color:#888;margin-bottom:10px;">Go to <b style="color:#fff">developer.ebay.com → User Tokens → OAuth → Sign in to Production</b>, copy the token and paste it below:</p>
+  <p style="font-size:13px;color:#888;margin-bottom:10px;">Go to <b style="color:#fff">developer.ebay.com &rarr; User Tokens &rarr; OAuth &rarr; Sign in to Production</b>, copy the token and paste it below:</p>
   <div style="display:flex;gap:10px;">
     <input id="token-input" type="text" placeholder="Paste your eBay OAuth token here..." style="flex:1;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;color:#fff;font-size:13px;">
     <button onclick="submitToken()" style="background:#22c55e;border:none;border-radius:8px;padding:10px 18px;color:#fff;font-weight:700;cursor:pointer;">Save</button>
@@ -119,7 +129,7 @@
   <!-- Upload card -->
   <div class="card">
     <h2>New Listing</h2>
-    <div id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropFiles(event)">
+    <div id="drop-zone" onclick="document.getElementById('file-input').click()" ondragover="dropZoneDragOver(event)" ondragleave="dropZoneDragLeave(event)" ondrop="dropZoneFiles(event)">
       <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
       </svg>
@@ -128,6 +138,7 @@
     </div>
     <input type="file" id="file-input" multiple accept="image/*" onchange="handleFiles(this.files)">
     <div id="photo-grid"></div>
+    <p class="grid-hint" id="grid-hint" style="display:none">Drag photos to reorder &bull; Click ↻ to rotate</p>
     <button id="analyze-btn" onclick="analyzePhotos()">
       Analyze with AI &rarr;
     </button>
@@ -229,11 +240,13 @@
 
 <script>
 const API = 'https://listsync-server.onrender.com';
-let selectedFiles = [];
-let uploadedFilenames = [];
-let uploadedData = {};
 
-// Check status on load
+// photoItems: [{file, rotation, previewUrl, serverFilename}]
+let photoItems = [];
+let dragSrcIndex = -1;
+
+// ---- Status / token ----
+
 function setConnected() {
   document.getElementById('status-dot').classList.add('connected');
   document.getElementById('status-text').textContent = 'eBay connected';
@@ -253,17 +266,12 @@ async function checkStatus() {
   } catch {}
 }
 
-// Check if redirected back from eBay
 if (location.search.includes('connected=true')) {
   history.replaceState({}, '', location.pathname);
   localStorage.setItem('ebay_connected', 'true');
   showToast('eBay account connected!');
 }
-
-if (localStorage.getItem('ebay_connected')) {
-  setConnected();
-}
-
+if (localStorage.getItem('ebay_connected')) setConnected();
 checkStatus();
 
 function toggleTokenBox() {
@@ -291,35 +299,107 @@ async function submitToken() {
   }
 }
 
-function dragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
-function dragLeave(e) { e.currentTarget.classList.remove('dragover'); }
-function dropFiles(e) {
+// ---- Drop zone (for adding new photos) ----
+
+function dropZoneDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('dragover');
+}
+function dropZoneDragLeave(e) { e.currentTarget.classList.remove('dragover'); }
+function dropZoneFiles(e) {
   e.preventDefault();
   e.currentTarget.classList.remove('dragover');
   handleFiles(e.dataTransfer.files);
 }
 
+// ---- Photo grid ----
+
 function handleFiles(files) {
   for (const file of files) {
-    if (!file.type.startsWith('image/')) continue;
-    selectedFiles.push(file);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const grid = document.getElementById('photo-grid');
-      const div = document.createElement('div');
-      div.className = 'photo-thumb';
-      const img = document.createElement('img');
-      img.src = e.target.result;
-      div.appendChild(img);
-      grid.appendChild(div);
-    };
-    reader.readAsDataURL(file);
+    if (!file.type.startsWith('image/') && !/\.(heic|heif)$/i.test(file.name)) continue;
+    photoItems.push({ file, rotation: 0, previewUrl: URL.createObjectURL(file), serverFilename: null });
   }
-  document.getElementById('analyze-btn').style.display = selectedFiles.length > 0 ? 'block' : 'none';
+  renderPhotoGrid();
 }
 
+function renderPhotoGrid() {
+  const grid = document.getElementById('photo-grid');
+  grid.innerHTML = '';
+
+  photoItems.forEach((item, i) => {
+    const div = document.createElement('div');
+    div.className = 'photo-thumb';
+    div.draggable = true;
+    div.dataset.index = i;
+
+    // Image (CSS rotation for preview)
+    const img = document.createElement('img');
+    img.src = item.previewUrl;
+    img.style.transform = `rotate(${item.rotation}deg)`;
+    // For 90/270 deg, scale to fill — avoids the image shrinking in the square
+    if (item.rotation === 90 || item.rotation === 270) {
+      img.style.transform += ' scale(1.35)';
+    }
+    div.appendChild(img);
+
+    // Order badge
+    const badge = document.createElement('div');
+    badge.className = 'photo-order';
+    badge.textContent = i + 1;
+    div.appendChild(badge);
+
+    // Controls (rotate CW + CCW)
+    const controls = document.createElement('div');
+    controls.className = 'photo-controls';
+    controls.innerHTML = `
+      <button class="rotate-btn" title="Rotate left" onclick="rotatePhoto(${i}, -90)">&#8634;</button>
+      <button class="rotate-btn" title="Rotate right" onclick="rotatePhoto(${i}, 90)">&#8635;</button>
+    `;
+    div.appendChild(controls);
+
+    // Drag events
+    div.addEventListener('dragstart', (e) => {
+      dragSrcIndex = i;
+      setTimeout(() => div.classList.add('dragging'), 0);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      document.querySelectorAll('.photo-thumb').forEach(t => t.classList.remove('drag-over'));
+    });
+    div.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (dragSrcIndex === i) return;
+      document.querySelectorAll('.photo-thumb').forEach(t => t.classList.remove('drag-over'));
+      div.classList.add('drag-over');
+    });
+    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+    div.addEventListener('drop', (e) => {
+      e.preventDefault();
+      div.classList.remove('drag-over');
+      if (dragSrcIndex === i || dragSrcIndex < 0) return;
+      const [moved] = photoItems.splice(dragSrcIndex, 1);
+      photoItems.splice(i, 0, moved);
+      renderPhotoGrid();
+    });
+
+    grid.appendChild(div);
+  });
+
+  const hasPhotos = photoItems.length > 0;
+  document.getElementById('analyze-btn').style.display = hasPhotos ? 'block' : 'none';
+  document.getElementById('grid-hint').style.display = photoItems.length > 1 ? 'block' : 'none';
+}
+
+function rotatePhoto(index, degrees) {
+  photoItems[index].rotation = ((photoItems[index].rotation + degrees) % 360 + 360) % 360;
+  renderPhotoGrid();
+}
+
+// ---- AI Analysis ----
+
 async function analyzePhotos() {
-  if (selectedFiles.length === 0) return;
+  if (photoItems.length === 0) return;
 
   const btn = document.getElementById('analyze-btn');
   btn.disabled = true;
@@ -328,16 +408,33 @@ async function analyzePhotos() {
 
   try {
     const formData = new FormData();
-    selectedFiles.forEach(f => formData.append('photos', f));
+    photoItems.forEach(item => formData.append('photos', item.file));
 
     const res = await fetch(`${API}/api/analyze`, { method: 'POST', body: formData });
     const data = await res.json();
-
     if (data.error) throw new Error(data.error);
 
-    uploadedFilenames = data.uploadedFiles || [];
-    uploadedData = data;
+    // Map server filenames back to each photoItem (in order uploaded)
+    (data.uploadedFiles || []).forEach((fname, i) => {
+      if (photoItems[i]) photoItems[i].serverFilename = fname;
+    });
 
+    // Apply AI rotation suggestions
+    if (Array.isArray(data.rotations)) {
+      let anyRotated = false;
+      data.rotations.forEach((deg, i) => {
+        if (photoItems[i] && deg !== 0) {
+          photoItems[i].rotation = ((photoItems[i].rotation + deg) % 360 + 360) % 360;
+          anyRotated = true;
+        }
+      });
+      if (anyRotated) {
+        renderPhotoGrid();
+        showToast('AI detected and corrected photo rotation — check the photos above');
+      }
+    }
+
+    // Fill form
     document.getElementById('f-title').value = data.title || '';
     document.getElementById('f-brand').value = data.brand || '';
     document.getElementById('f-price').value = data.price || '';
@@ -347,16 +444,16 @@ async function analyzePhotos() {
     document.getElementById('f-description').value = data.description || '';
 
     const catSel = document.getElementById('f-category');
-    for (let opt of catSel.options) {
-      if (opt.value === data.category) { catSel.value = data.category; break; }
+    for (const opt of catSel.options) {
+      if (opt.value.toLowerCase() === (data.category || '').toLowerCase()) { catSel.value = opt.value; break; }
     }
     const condSel = document.getElementById('f-condition');
-    for (let opt of condSel.options) {
-      if (opt.value === data.condition) { condSel.value = data.condition; break; }
+    for (const opt of condSel.options) {
+      if (opt.value === data.condition) { condSel.value = opt.value; break; }
     }
     const stSel = document.getElementById('f-sizetype');
-    for (let opt of stSel.options) {
-      if (opt.value === data.sizeType) { stSel.value = data.sizeType; break; }
+    for (const opt of stSel.options) {
+      if (opt.value === data.sizeType) { stSel.value = opt.value; break; }
     }
 
     document.getElementById('listing-form').style.display = 'block';
@@ -370,10 +467,16 @@ async function analyzePhotos() {
   }
 }
 
+// ---- Post to eBay ----
+
 async function postToEbay() {
   const btn = document.getElementById('post-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Posting to eBay...';
+
+  // Use current photoItems order and rotations
+  const uploadedFiles = photoItems.map(p => p.serverFilename).filter(Boolean);
+  const rotations = photoItems.filter(p => p.serverFilename).map(p => p.rotation);
 
   const payload = {
     title: document.getElementById('f-title').value,
@@ -386,7 +489,8 @@ async function postToEbay() {
     category: document.getElementById('f-category').value,
     condition: document.getElementById('f-condition').value,
     description: document.getElementById('f-description').value,
-    uploadedFiles: uploadedFilenames
+    uploadedFiles,
+    rotations
   };
 
   try {
@@ -408,11 +512,13 @@ async function postToEbay() {
   }
 }
 
+// ---- Reset ----
+
 function resetForm() {
-  selectedFiles = [];
-  uploadedFilenames = [];
-  uploadedData = {};
+  photoItems.forEach(p => URL.revokeObjectURL(p.previewUrl));
+  photoItems = [];
   document.getElementById('photo-grid').innerHTML = '';
+  document.getElementById('grid-hint').style.display = 'none';
   document.getElementById('analyze-btn').style.display = 'none';
   document.getElementById('analyze-btn').disabled = false;
   document.getElementById('analyze-btn').innerHTML = 'Analyze with AI &rarr;';
@@ -421,6 +527,8 @@ function resetForm() {
   document.getElementById('post-btn').innerHTML = 'Post to eBay';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+// ---- Active listings ----
 
 async function loadListings() {
   try {
@@ -464,13 +572,14 @@ async function markSold(sku) {
   }
 }
 
+// ---- Utilities ----
+
 function showToast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = isError ? 'error show' : 'show';
   setTimeout(() => t.className = isError ? 'error' : '', 4000);
 }
-
 function showLoading(text) {
   document.getElementById('loading-text').textContent = text;
   document.getElementById('loading-overlay').classList.add('show');
