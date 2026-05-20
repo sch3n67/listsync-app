@@ -193,15 +193,20 @@ let selectedFiles = [];
 let uploadedFilenames = [];
 
 // Check status on load
+function setConnected() {
+  document.getElementById('status-dot').classList.add('connected');
+  document.getElementById('status-text').textContent = 'eBay connected';
+  document.getElementById('connect-btn').textContent = 'Connected';
+  document.getElementById('connect-btn').classList.add('connected');
+}
+
 async function checkStatus() {
   try {
     const res = await fetch(`${API}/api/status`);
     const data = await res.json();
     if (data.connected) {
-      document.getElementById('status-dot').classList.add('connected');
-      document.getElementById('status-text').textContent = 'eBay connected';
-      document.getElementById('connect-btn').textContent = 'Connected';
-      document.getElementById('connect-btn').classList.add('connected');
+      setConnected();
+      localStorage.setItem('ebay_connected', 'true');
     }
     loadListings();
   } catch {}
@@ -209,8 +214,13 @@ async function checkStatus() {
 
 // Check if redirected back from eBay
 if (location.search.includes('connected=true')) {
-  history.replaceState({}, '', '/');
+  history.replaceState({}, '', location.pathname);
+  localStorage.setItem('ebay_connected', 'true');
   showToast('eBay account connected!');
+}
+
+if (localStorage.getItem('ebay_connected')) {
+  setConnected();
 }
 
 checkStatus();
