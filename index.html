@@ -104,9 +104,16 @@
   <div id="status-bar">
     <div id="status-dot"></div>
     <span id="status-text">Not connected</span>
-    <button id="connect-btn" onclick="connectEbay()">Connect eBay</button>
+    <button id="connect-btn" onclick="toggleTokenBox()">Connect eBay</button>
   </div>
 </header>
+<div id="token-box" style="display:none;background:#1a1a1a;border-bottom:1px solid #2a2a2a;padding:16px 24px;">
+  <p style="font-size:13px;color:#888;margin-bottom:10px;">Go to <b style="color:#fff">developer.ebay.com → User Tokens → OAuth → Sign in to Production</b>, copy the token and paste it below:</p>
+  <div style="display:flex;gap:10px;">
+    <input id="token-input" type="text" placeholder="Paste your eBay OAuth token here..." style="flex:1;background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:10px 12px;color:#fff;font-size:13px;">
+    <button onclick="submitToken()" style="background:#22c55e;border:none;border-radius:8px;padding:10px 18px;color:#fff;font-weight:700;cursor:pointer;">Save</button>
+  </div>
+</div>
 
 <main>
   <!-- Upload card -->
@@ -225,11 +232,29 @@ if (localStorage.getItem('ebay_connected')) {
 
 checkStatus();
 
-async function connectEbay() {
-  if (document.getElementById('connect-btn').classList.contains('connected')) return;
-  const res = await fetch(`${API}/api/auth-url`);
+function toggleTokenBox() {
+  const box = document.getElementById('token-box');
+  box.style.display = box.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitToken() {
+  const token = document.getElementById('token-input').value.trim();
+  if (!token) return;
+  const res = await fetch(`${API}/api/set-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token })
+  });
   const data = await res.json();
-  window.location.href = data.url;
+  if (data.success) {
+    localStorage.setItem('ebay_connected', 'true');
+    setConnected();
+    document.getElementById('token-box').style.display = 'none';
+    document.getElementById('token-input').value = '';
+    showToast('eBay connected!');
+  } else {
+    showToast('Failed to save token', true);
+  }
 }
 
 function dragOver(e) { e.preventDefault(); e.currentTarget.classList.add('dragover'); }
