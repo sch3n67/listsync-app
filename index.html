@@ -157,12 +157,45 @@
         <input type="text" id="f-size">
       </div>
       <div class="form-group">
+        <label>Size Type</label>
+        <select id="f-sizetype">
+          <option>Regular</option>
+          <option>Big &amp; Tall</option>
+          <option>Petite</option>
+          <option>Plus</option>
+          <option>Maternity</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label>Color</label>
         <input type="text" id="f-color">
       </div>
       <div class="form-group">
+        <label>Material</label>
+        <input type="text" id="f-material" placeholder="e.g. Cotton, Polyester, Denim">
+      </div>
+      <div class="form-group">
         <label>Category</label>
-        <input type="text" id="f-category">
+        <select id="f-category">
+          <option>Men's T-Shirt</option>
+          <option>Men's Shirt</option>
+          <option>Men's Jeans</option>
+          <option>Men's Pants</option>
+          <option>Men's Shorts</option>
+          <option>Men's Jacket</option>
+          <option>Men's Sweater</option>
+          <option>Men's Hoodie</option>
+          <option>Women's Top</option>
+          <option>Women's T-Shirt</option>
+          <option>Women's Jeans</option>
+          <option>Women's Pants</option>
+          <option>Women's Shorts</option>
+          <option>Women's Dress</option>
+          <option>Women's Skirt</option>
+          <option>Women's Jacket</option>
+          <option>Women's Sweater</option>
+          <option>Women's Hoodie</option>
+        </select>
       </div>
       <div class="form-group">
         <label>Condition</label>
@@ -198,6 +231,7 @@
 const API = 'https://listsync-server.onrender.com';
 let selectedFiles = [];
 let uploadedFilenames = [];
+let uploadedData = {};
 
 // Check status on load
 function setConnected() {
@@ -302,17 +336,27 @@ async function analyzePhotos() {
     if (data.error) throw new Error(data.error);
 
     uploadedFilenames = data.uploadedFiles || [];
+    uploadedData = data;
 
     document.getElementById('f-title').value = data.title || '';
     document.getElementById('f-brand').value = data.brand || '';
     document.getElementById('f-price').value = data.price || '';
     document.getElementById('f-size').value = data.size || '';
     document.getElementById('f-color').value = data.color || '';
-    document.getElementById('f-category').value = data.category || '';
+    document.getElementById('f-material').value = data.material || 'Cotton';
     document.getElementById('f-description').value = data.description || '';
+
+    const catSel = document.getElementById('f-category');
+    for (let opt of catSel.options) {
+      if (opt.value === data.category) { catSel.value = data.category; break; }
+    }
     const condSel = document.getElementById('f-condition');
     for (let opt of condSel.options) {
       if (opt.value === data.condition) { condSel.value = data.condition; break; }
+    }
+    const stSel = document.getElementById('f-sizetype');
+    for (let opt of stSel.options) {
+      if (opt.value === data.sizeType) { stSel.value = data.sizeType; break; }
     }
 
     document.getElementById('listing-form').style.display = 'block';
@@ -336,7 +380,9 @@ async function postToEbay() {
     brand: document.getElementById('f-brand').value,
     price: parseFloat(document.getElementById('f-price').value),
     size: document.getElementById('f-size').value,
+    sizeType: document.getElementById('f-sizetype').value,
     color: document.getElementById('f-color').value,
+    material: document.getElementById('f-material').value,
     category: document.getElementById('f-category').value,
     condition: document.getElementById('f-condition').value,
     description: document.getElementById('f-description').value,
@@ -365,6 +411,7 @@ async function postToEbay() {
 function resetForm() {
   selectedFiles = [];
   uploadedFilenames = [];
+  uploadedData = {};
   document.getElementById('photo-grid').innerHTML = '';
   document.getElementById('analyze-btn').style.display = 'none';
   document.getElementById('analyze-btn').disabled = false;
